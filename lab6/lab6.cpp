@@ -44,8 +44,7 @@ stack<char> parseStack;
 stack<char> operStack;
 string inputstroke;
 size_t pos = 0;
-set<string> identifierTable; // Таблица идентификаторов
-string currentIdentifier;   // Текущий идентификатор для добавления в таблицу
+set<string> identifierTable;
 int nestingLevel = 0;
 
 void skipWhitespace() {
