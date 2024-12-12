@@ -4,18 +4,19 @@
 #include <unordered_map>
 #include <stack>
 #include <vector>
+#include <set>
 
 using namespace std;
 
 unordered_map<string, int> ravno = { /**/{"?L", 1}, /**/{"L?", 2}, {"I(", 3}, {"(E", 4}, {"E)", 5},
                                     {"E+", 6}, {"+T", 7}, {"E-", 8}, {"-T", 9}, {"T*", 10},
-                                    {"*M", 11}, {"T/", 12}, {"/M", 13}, /**/{"LS", 14}};
+                                    {"*M", 11}, {"T/", 12}, {"/M", 13}, /**/{"LS", 14} };
 
 unordered_map<string, int> menishe = { {"?I", 1}, {"(T", 2}, {"(M", 3}, {"((", 4}, {"(I", 5},
                                       {"(C", 6}, {"(E", 7}, {"+M", 8}, {"+(", 9}, {"+I", 10},
                                       {"+C", 11}, {"-M", 12}, {"-(", 13}, {"-I", 14}, {"-C", 15},
                                       {"*(", 16}, {"*I", 17}, {"*C", 18}, {"/(", 19}, {"/I", 20},
-                                      {"/C", 21}, {"+T", 22}, {"-T", 23}, /**/{"?L", 24} , /**/{"?S", 25}, /**/{"LI", 26}};
+                                      {"/C", 21}, {"+T", 22}, {"-T", 23}, /**/{"?L", 24} , /**/{"?S", 25}, /**/{"LI", 26} };
 
 unordered_map<string, int> bolshe = { {")?", 1}, {"T)", 2}, {"M)", 3}, {"))", 4}, {"I)", 5},
                                      {"C)", 6}, /**/{"SI", 7}, {"T+", 8}, {"M+", 9}, {")+", 10},
@@ -39,9 +40,13 @@ unordered_map<string, string> lowrules = {
     {"C", "M"}, {"M", "T"}, {"T", "E"}, {"I", "M"},{"S", "L"},
 };
 
-stack<char> parseStack;   
+stack<char> parseStack;
+stack<char> operStack;
 string inputstroke;
 size_t pos = 0;
+set<string> identifierTable; // Таблица идентификаторов
+string currentIdentifier;   // Текущий идентификатор для добавления в таблицу
+int nestingLevel = 0;
 
 void skipWhitespace() {
     while (isspace(inputstroke[pos])) pos++;
@@ -99,6 +104,14 @@ string parseI() {
     else {
         error("Expected identifier in I");
     }
+    if (nestingLevel == 0) {
+        identifierTable.insert(id);
+    }
+
+    if (identifierTable.find(id) == identifierTable.end()) {
+        error("Undefined identifier: " + id);
+    }
+
     return "I";
 }
 
@@ -114,11 +127,19 @@ string parseExpression() {
         else if (isDigit(current)) {
             result += parseC();
         }
+        else if (current == '(') {
+            nestingLevel++;
+            result += get();
+        }
+        else if (current == ')') {
+            nestingLevel--;
+            result += get();
+        }
         else {
             result += get();
         }
     }
-    
+
     return result;
 }
 
@@ -137,22 +158,17 @@ void logAction(ofstream& outFile, const string& action, const stack<char>& stk, 
     outFile << " | Y: " << currentInput << " | " << action << endl;
 }
 
-
-
 void shift(char symbol, ofstream& outFile) {
     logAction(outFile, "Сдвиг", parseStack, symbol);
     parseStack.push(symbol);
     logAction(outFile, "", parseStack, '-');
 }
 
-
-
 void reduce(ofstream& outFile) {
     string rightPart;
-    vector<string> poppedSymbols; // Для хранения извлечённых символов
+    vector<string> poppedSymbols;
     string temp;
 
-    // Извлекаем до 4 символов из стека
     for (int i = 0; i < 4 && !parseStack.empty(); i++) {
         temp = parseStack.top();
         parseStack.pop();
@@ -160,7 +176,6 @@ void reduce(ofstream& outFile) {
         rightPart = temp + rightPart;
     }
 
-    // Проверяем правила длиной 4 символа
     if (highrules.find(rightPart) != highrules.end()) {
         string leftPart = highrules[rightPart];
         parseStack.push(leftPart[0]);
@@ -168,11 +183,10 @@ void reduce(ofstream& outFile) {
         return;
     }
 
-    // Если правило не найдено, возвращаем последний символ обратно в стек и проверяем 3-символьные правила
     while (poppedSymbols.size() > 3) {
         parseStack.push(poppedSymbols.back()[0]);
         poppedSymbols.pop_back();
-        rightPart = rightPart.substr(1); // Уменьшаем правую часть
+        rightPart = rightPart.substr(1);
     }
 
     if (normalrules.find(rightPart) != normalrules.end()) {
@@ -185,7 +199,7 @@ void reduce(ofstream& outFile) {
     while (poppedSymbols.size() > 2) {
         parseStack.push(poppedSymbols.back()[0]);
         poppedSymbols.pop_back();
-        rightPart = rightPart.substr(1); // Уменьшаем правую часть
+        rightPart = rightPart.substr(1);
     }
 
     if (low2rules.find(rightPart) != low2rules.end()) {
@@ -195,11 +209,10 @@ void reduce(ofstream& outFile) {
         return;
     }
 
-    // Если правило не найдено, возвращаем ещё один символ и проверяем 1-символьные правила
     while (poppedSymbols.size() > 1) {
         parseStack.push(poppedSymbols.back()[0]);
         poppedSymbols.pop_back();
-        rightPart = rightPart.substr(1); // Уменьшаем правую часть
+        rightPart = rightPart.substr(1);
     }
 
     rightPart = poppedSymbols.back();
@@ -210,33 +223,41 @@ void reduce(ofstream& outFile) {
         return;
     }
 
-    // Если правило так и не найдено, выводим ошибку
     cerr << "Ошибка: не найдено правило для свёртки " << rightPart << endl;
     exit(1);
 }
 
-
 void shiftReduce(const string& lexemes, ofstream& outFile) {
-    parseStack.push('?'); 
+    parseStack.push('?');
     size_t pos = 0;
 
     while (pos < lexemes.size()) {
-        char topStack = parseStack.top(); 
-        char currentInput = lexemes[pos]; 
-        
+        char topStack = parseStack.top();
+        char currentInput = lexemes[pos];
+
         string pair = string(1, topStack) + string(1, currentInput);
         if (parseStack.size() == 2 && parseStack.top() == 'L' && lexemes[pos] == '?') {
             logAction(outFile, "Цепочка принята!", parseStack, currentInput);
             return;
         }
         if (menishe.find(pair) != menishe.end()) {
+            /*if ((pair == "(E") || (pair == "+T") || (pair == "-T") || (pair == "(I") || (pair == "?L")) {
+                parseStack.push('<');
+                parseStack.push('=');
+            }
+            else{
+                parseStack.push('<');
+            }*/
             shift(currentInput, outFile);
+
             pos++;
         }
         else if (bolshe.find(pair) != bolshe.end()) {
+            //parseStack.push('>');
             reduce(outFile);
         }
         else if (ravno.find(pair) != ravno.end()) {
+            //parseStack.push('=');
             shift(currentInput, outFile);
             pos++;
         }
@@ -245,7 +266,7 @@ void shiftReduce(const string& lexemes, ofstream& outFile) {
             exit(1);
         }
     }
-    
+
     cerr << "Ошибка: цепочка не завершена корректно." << endl;
     exit(1);
 }
@@ -265,27 +286,21 @@ int main() {
     }
 
     string line;
-    int lineNumber = 1;
     while (getline(inputFile, line)) {
-        inputstroke = line;
-        pos = 0;
-        parseStack = stack<char>();
-
-        string lexemes = parseExpression();
-        lexemes += "?"; 
-
-        outputFile << "Строка " << lineNumber << ": " << line << endl;
-        outputFile << "Лексемы: " << lexemes << endl;
-
-        shiftReduce(lexemes, outputFile);
-
-        outputFile << "---- Конец обработки строки " << lineNumber << " ----" << endl << endl;
-        lineNumber++;
+        inputstroke += line;
     }
+
+    outputFile << "Строка:" << inputstroke << endl;
+
+    string result = parseExpression();
+    result += "?";
+
+    outputFile << "Лексемы: " << result << endl;
+    shiftReduce(result, outputFile);
 
     inputFile.close();
     outputFile.close();
 
-    cout << "Обработка завершена. Результаты записаны в файл output.c." << endl;
+    cout << "Обработка завершена. Результаты записаны в файл output.c" << endl;
     return 0;
 }
